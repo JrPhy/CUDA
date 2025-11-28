@@ -70,24 +70,26 @@ int main(void) {
 其中 ```cudaMallocManaged``` 是分配記憶體的一種方式，分配一個統一記憶體 **Unified memory** 讓 CPU 與 GPU 都能存取，並且在 run-time 可以自動搬運記憶體，就不需要在寫程式時另外寫，但是速度也較慢，```<<<...>>>``` 標示符是指用多少個 GPU Core，。再來則是等待所有 GPU 跑完後把資料丟回 CPU 的 ```cudaDeviceSynchronize()```，最後就是去跑```cudaFree```來返還申請的記憶體。
 
 ## 2. GPU 的分塊
-GPU 中有層級關係，起調用一次函數就是一個 grid，一個 grid 中有多個 block，一個 block 中有多個 thread，thread 就是最小單位，其關係如下圖
+GPU 中有層級關係，起調用一次函數就是一個 grid，一個 grid 中有多個 block，一個 block 中有多個 Warp，Warp 中固定有 32 個 thread，thread 就是最小單位，其關係如下圖
 ```
 Grid
-└─ Block (0)
-   ├─ Thread (0,0)
-   ├─ Thread (0,1)
-   ├─ Thread (0,2)
-   └─ ...
-└─ Block (1)
-   ├─ Thread (1,0)
-   ├─ Thread (1,1)
-   ├─ Thread (1,2)
-   └─ ...
-└─ Block (2)
-   ├─ Thread (2,0)
-   ├─ Thread (2,1)
-   ├─ Thread (2,2)
-   └─ ...
+ ├── Block 0
+ │    ├── Warp 0
+ │    │    ├── Thread 0
+ │    │    ├── Thread 1
+ │    │    ├── ...
+ │    │    └── Thread 31
+ │    ├── Warp 1
+ │    │    ├── Thread 32
+ │    │    ├── Thread 33
+ │    │    └── ...
+ │    └── Warp N
+ │         └── Thread ...
+ ├── Block 1
+ │    ├── Warp 0
+ │    └── Warp 1
+ └── Block M
+      └── Warp ...
 ```
 在分配時有可能 thread 數量超過陣列大小，所以還是會在函數中寫以下判斷來保證不超過 index。
 ```
