@@ -33,8 +33,8 @@ int main() {
 
 // Kernel function to add the elements of two arrays
 __global__ void add(int n, float* x, float* y) {
-    for (int i = 0; i < n; i++)
-        y[i] = x[i] + y[i];
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    if (tid < n) y[tid] = x[tid] + y[tid];
 }
 
 int main(void) {
@@ -52,7 +52,9 @@ int main(void) {
     }
 
     // Run kernel on 1M elements on the GPU
-    add<<<1, 1>>>(n, x, y);
+    int blockSize = 256;
+    int numBlocks = (n + blockSize - 1) / blockSize;
+    add<<<numBlocks, blockSize>>>(n, x, y);
 
     // Wait for GPU to finish before accessing on host
     cudaDeviceSynchronize();
@@ -66,81 +68,127 @@ int main(void) {
     return 0;
 }
 ```
-其中 ```cudaMallocManaged``` 是分配記憶體的一種方式，分配一個統一記憶體 **Unified memory** 讓 CPU 與 GPU 都能存取，並且在 run-time 可以自動搬運記憶體，就不需要在寫程式時另外寫，但是速度也較慢，另一個則是 ```cudaMalloc``` 要搭配 ```cudaMemcpy``` 讓資料在 CPU 與 GPU 間搬運，效能也較好，一般也都是使用這兩個。```<<<...>>>``` 標示符是指用多少個 GPU Core，晚點來看如何分配。再來則是等待所有 GPU 跑完後把資料丟回 CPU 的 ```cudaDeviceSynchronize()```，最後就是去跑```cudaFree```來返還申請的記憶體。接著改用 ```cudaMalloc``` 要搭配 ```cudaMemcpy``` 來改寫以上例子，cudaMalloc 只分配記憶體在 GPU 上，所以需要用 cudaMemcpy 來把值複製到 GPU。
+其中 ```cudaMallocManaged``` 是分配記憶體的一種方式，分配一個統一記憶體 **Unified memory** 讓 CPU 與 GPU 都能存取，並且在 run-time 可以自動搬運記憶體，就不需要在寫程式時另外寫，但是速度也較慢，```<<<...>>>``` 標示符是指用多少個 GPU Core，。再來則是等待所有 GPU 跑完後把資料丟回 CPU 的 ```cudaDeviceSynchronize()```，最後就是去跑```cudaFree```來返還申請的記憶體。
 
-## 2. 如何分配給 GPU 
-在 CPU 運算時很常使用多線程，而 GPU 可以開啟更多線程(thread)去做非常簡單的計算，所以通常在做加法時就可以丟給 GPU。<<<numBlocks, blockSize>>> 這就是用來告訴 GPU 要使用多少個，稱為 grid。所以通常會根據向量維度來做分配。以一維為例，就是 1* n 或是 n*1 的陣列，所以此例子中有 1 個 block，裡面有 256 個線程去跑。
+## 2. GPU 的分塊
+GPU 中有層級關係，起調用一次函數就是一個 grid，一個 grid 中有多個 block，一個 block 中有多個 thread，thread 就是最小單位，其關係如下圖
 ```
-int blockSize = 256;
-int numBlocks = (n + blockSize - 1) / blockSize;
-add<<<numBlocks, blockSize>>>(n, d_x, d_y);
+Grid
+└─ Block (0)
+   ├─ Thread (0,0)
+   ├─ Thread (0,1)
+   ├─ Thread (0,2)
+   └─ ...
+└─ Block (1)
+   ├─ Thread (1,0)
+   ├─ Thread (1,1)
+   ├─ Thread (1,2)
+   └─ ...
+└─ Block (2)
+   ├─ Thread (2,0)
+   ├─ Thread (2,1)
+   ├─ Thread (2,2)
+   └─ ...
 ```
+在分配時有可能 thread 數量超過陣列大小，所以還是會在函數中寫以下判斷來保證不超過 index。
+```
+int tid = threadIdx.x + blockIdx.x * blockDim.x;
+if (tid < n) y[tid] = x[tid] + y[tid];
+```
+<<<numBlocks, blockSize>>> 這就是用來告訴 GPU 要使用多少個。以一維為例，就是 1* n 或是 n*1 的陣列，所以此例子中有 1 個 block，裡面有 256 個線程去跑。當然也可以用多維的方式去分配，dim3 就是分別對應 x, y, z，若沒寫則預設為 1。
 ```
 dim3 blockSize(16, 16);  // 每個 block 有 16×16 threads
 dim3 numBlocks((width+15)/16, (height+15)/16);
 addMatrix<<<numBlocks, blockSize>>>(d_mat, width, height);
 ```
-在多線程時最怕就是 race condition，如果要 block 中的 thread 共享資料，那就要都算完再去讀取，可以在 grid 中使用 ```__syncthreads()```
+當然 kernel 中的 tid 也需要跟著改
+```
+// 假設每張圖片大小為 width x height，batchSize 張圖片
+// 輸入是 RGB，每個像素有 3 個通道 (R,G,B)
 
-```c++
-#include <iostream>
-#include <math.h>
+__global__ void batchGrayScaleKernel(
+    unsigned char* input,   // 輸入影像 (batchSize * width * height * 3)
+    unsigned char* output,  // 輸出灰階影像 (batchSize * width * height)
+    int width, int height, int batchSize) {
+    // 計算 thread 對應的座標
+    int x = blockIdx.x * blockDim.x + threadIdx.x;  // pixel x
+    int y = blockIdx.y * blockDim.y + threadIdx.y;  // pixel y
+    int z = blockIdx.z * blockDim.z + threadIdx.z;  // 第幾張圖片 (batch index)
 
-// Kernel function to add the elements of two arrays
-__global__ void add(int n, float* x, float* y) {
-    int tid = threadIdx.x + blockIdx.x * blockDim.x;
-    if (tid < n) y[tid] = x[tid] + y[tid];
+    if (x < width && y < height) {
+        int idx = (y * width + x) * 3; // RGB index
+        unsigned char r = input[idx + 0];
+        unsigned char g = input[idx + 1];
+        unsigned char b = input[idx + 2];
+        unsigned char gray = (unsigned char)(0.299f*r + 0.587f*g + 0.114f*b);
+        output[y * width + x] = gray;
+    }
 }
 
-int main(void) {
-    int n = 1 << 15;  // 32768
-    size_t size = n * sizeof(float);
+int main() {
+    int width = 1024, height = 768;
+    dim3 blockDim(16, 16);  // 每個 Block 有 16x16 threads
+    dim3 gridDim((width+15)/16, (height+15)/16); 
+    // Grid 的第三維 (z) 對應到第幾張圖片
+    batchGrayScaleKernel<<<gridDim, blockDim>>>(d_input, d_output, width, height);
+}
+```
+## 2. 手動分配給 GPU 
+另一個則是 ```cudaMalloc``` 要搭配 ```cudaMemcpy``` ，手動將資料在 CPU 與 GPU 間搬運，效能也較好，一般也都是使用這兩個。計算前先將 CPU 的記憶體複製到 GPU，計算完後再丟回來即可，這部分已有現成函數可使用。
+```c++
+#include <cuda_runtime.h>
+#include <iostream>
 
-    // Host memory allocation
-    float *h_x = new float[n];
-    float *h_y = new float[n];
+__global__ void batchGrayScaleKernel(
+    unsigned char* input,   // 輸入影像 (batchSize * width * height * 3)
+    unsigned char* output,  // 輸出灰階影像 (batchSize * width * height)
+    int width, int height, int batchSize)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;  // pixel x
+    int y = blockIdx.y * blockDim.y + threadIdx.y;  // pixel y
+    int z = blockIdx.z * blockDim.z + threadIdx.z;  // 第幾張圖片 (batch index)
 
-    // Initialize host arrays
-    for (int i = 0; i < n; i++) {
-        h_x[i] = 1.0f;
-        h_y[i] = 2.0f;
+    if (x < width && y < height && z < batchSize) {
+        int idx = (z * width * height + y * width + x) * 3; // RGB index
+        unsigned char r = input[idx + 0];
+        unsigned char g = input[idx + 1];
+        unsigned char b = input[idx + 2];
+
+        unsigned char gray = (unsigned char)(0.299f*r + 0.587f*g + 0.114f*b);
+
+        output[z * width * height + y * width + x] = gray;
     }
+}
 
-    // Device memory allocation
-    float *d_x, *d_y;
-    cudaMalloc(&d_x, size);
-    cudaMalloc(&d_y, size);
+int main() {
+    int width = 1024, height = 768, batchSize = 10;
+    size_t inputSize  = batchSize * width * height * 3 * sizeof(unsigned char);
+    size_t outputSize = batchSize * width * height * sizeof(unsigned char);
 
-    // Copy data from host to device
-    cudaMemcpy(d_x, h_x, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_y, h_y, size, cudaMemcpyHostToDevice);
+    unsigned char* h_input  = new unsigned char[inputSize];
+    unsigned char* h_output = new unsigned char[outputSize];
 
-    // Run kernel on n elements (use enough threads)
-    int blockSize = 256;
-    int numBlocks = (n + blockSize - 1) / blockSize;
-    add<<<numBlocks, blockSize>>>(n, d_x, d_y);
+    unsigned char* d_input;
+    unsigned char* d_output;
+    cudaMalloc((void**)&d_input, inputSize);
+    cudaMalloc((void**)&d_output, outputSize);
 
-    // Wait for GPU to finish
-    cudaDeviceSynchronize();
+    cudaMemcpy(d_input, h_input, inputSize, cudaMemcpyHostToDevice);
 
-    // Copy results back to host
-    cudaMemcpy(h_y, d_y, size, cudaMemcpyDeviceToHost);
+    dim3 blockDim(16, 16, 1);  
+    dim3 gridDim((width+15)/16, (height+15)/16, batchSize);
 
-    // Check results (all values should be 3.0f)
-    for (int i = 0; i < 10; i++) {  // print first 10 for brevity
-        std::cout << h_y[i] << " ";
-    }
-    std::cout << std::endl;
+    batchGrayScaleKernel<<<gridDim, blockDim>>>(d_input, d_output, width, height, batchSize);
 
-    // Free device memory
-    cudaFree(d_x);
-    cudaFree(d_y);
+    cudaMemcpy(h_output, d_output, outputSize, cudaMemcpyDeviceToHost);
 
-    // Free host memory
-    delete[] h_x;
-    delete[] h_y;
+    cudaFree(d_input);
+    cudaFree(d_output);
 
+    delete[] h_input;
+    delete[] h_output;
+
+    std::cout << "Batch grayscale conversion done!" << std::endl;
     return 0;
 }
-
 ```
