@@ -133,7 +133,7 @@ int main() {
     batchGrayScaleKernel<<<gridDim, blockDim>>>(d_input, d_output, width, height);
 }
 ```
-## 2. 手動分配給 GPU 
+## 3. 手動分配給 GPU 
 另一個則是 ```cudaMalloc``` 要搭配 ```cudaMemcpy``` ，手動將資料在 CPU 與 GPU 間搬運，效能也較好，一般也都是使用這兩個。計算前先將 CPU 的記憶體複製到 GPU，計算完後再丟回來即可，這部分已有現成函數可使用。
 ```c++
 #include <cuda_runtime.h>
