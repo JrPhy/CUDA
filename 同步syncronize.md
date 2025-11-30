@@ -10,7 +10,7 @@
 
 ## 1. cudaDeviceSynchronize
 這會等 GPU 內的所有 BLOCK 算完後再去執行下一段程式碼，所以通常在呼叫 KERNEL 時後面都會搭配 ```cudaDeviceSynchronize()```，下方例子就是全都算完後才會去執行 cout。
-```
+```C++
 __global__ void add(int n, float* x, float* y) {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
     if (tid < n) y[tid] = x[tid] + y[tid];
@@ -29,7 +29,7 @@ int main(void) {
 
 ## 2. __syncthreads
 在同一個 block 中也有許多 thread，如果需要等所有 thread 計算完在做下一次計算，就會需要用到此函數。例如在解波動方程時 $\ \frac{\partial u(x, t)}{\partial t} = \frac{\partial u(x, t)}{\partial x} $可以把空間計算去做平行，但是在時間步就需要等所有個 BLOCK 算完再進行下一次迭代
-```
+```C++
 __global__ void wave1D(float *u_prev, float *u_curr, float *u_next, int N, float c) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -47,7 +47,7 @@ __global__ void wave1D(float *u_prev, float *u_curr, float *u_next, int N, float
 }
 ```
 另一個就是在 kernel 中使用 shared memory 就需要做同步，例如在做矩陣相乘時，同個 row 與 col 相乘時可以不用照順序，但是最後加總時要等該 row 與 col 算完才能更新，否則就有可能在其他元素尚未計算完成之前就被更新了資料。
-```
+```C++
 __global__ void matrixMulTiled(float *A, float *B, float *C, int N, int TILE_SIZE) {
     __shared__ float As[TILE_SIZE][TILE_SIZE], Bs[TILE_SIZE][TILE_SIZE];
 
