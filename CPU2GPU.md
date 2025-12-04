@@ -103,7 +103,7 @@ dim3 numBlocks((width+15)/16, (height+15)/16);
 addMatrix<<<numBlocks, blockSize>>>(d_mat, width, height);
 ```
 當然 kernel 中的 tid 也需要跟著改
-```
+```C++
 // 假設每張圖片大小為 width x height，batchSize 張圖片
 // 輸入是 RGB，每個像素有 3 個通道 (R,G,B)
 
