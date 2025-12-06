@@ -62,3 +62,4 @@ for (int i = 0; i < numImages; i++) {
 因為這邊用了 cudaMemcpyAsync，所以最後要等每個 Stream 同步完後在去做下一步。
 
 ## 2. cudaStreamSynchronize
+上面程式碼使用了```cudaStreamSynchronize(streams[i]);```，是只等待該 streams 內的任務完成，這樣就可以直接存取 ***i<sup>th</sup>*** 張圖片，不用等到所有 streams 都完成
