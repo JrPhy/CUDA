@@ -46,7 +46,8 @@ Stream 2:             [Memcpy H2D]----[Kernel]----[Memcpy D2H]   (Image 3)
 Stream 3:                   [Memcpy H2D]----[Kernel]----[Memcpy D2H]   (Image 4)
 */
 ```
-注意到這邊使用```cudaMemcpyAsync```而非```cudaMemcpy```，因為 cudaMemcpy 是隱式同步，CPU 會等待複製完在去往下執行，cudaMemcpyAsync 則是會把指令放入對列中，從每個 Stream 去做事。
+注意到這邊使用```cudaMemcpyAsync```而非```cudaMemcpy```，因為 cudaMemcpy 是隱式同步，CPU ***會等***待複製完在去往下執行，cudaMemcpyAsync 則是會把指令放入隊列中，並***不會等*** CPU 複製完才去做下一個指令，就能省下許多時間如下圖所示。\
+![img](img/stream.png)
 ```c++
 // 等待所有 stream 完成
 for (int i = 0; i < numImages; i++) {
@@ -58,3 +59,6 @@ for (int i = 0; i < numImages; i++) {
     delete[] h_out[i];
 }
 ```
+因為這邊用了 cudaMemcpyAsync，所以最後要等每個 Stream 同步完後在去做下一步。
+
+## 2. cudaStreamSynchronize
