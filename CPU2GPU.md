@@ -73,10 +73,10 @@ int main(void) {
 給 GPU 執行的函數稱為核函數(Kernal function)，且只能返回```void```，所以都要用傳指標的方式進函數中，而使用多少 GPU 線程則是寫在核函數中。有以下標示符來給 CPU 與 GPU 辨認
 ```
 __global__: CPU 呼叫給 GPU 跑
-__divice__: GPU 呼叫給 GPU 跑
+__device__: GPU 呼叫給 GPU 跑
 __host__: CPU 呼叫給 CPU 跑
 ```
-大部分情況是使用 __global__ 修飾核函數，但如果有核函數呼叫另一個核函數，則是用 __divice__ 修飾。
+大部分情況是使用 __global__ 修飾核函數，但如果有核函數呼叫另一個核函數，則是用 __device__ 修飾。
 
 ## 3. GPU 的分塊
 GPU 中有層級關係，調用一次核函數就是一個 grid，一個 grid 中有多個 block，一個 block 中有多個 Warp，Warp 中固定有 32 個 thread，thread 就是最小單位，其關係如下圖
@@ -203,4 +203,4 @@ int main() {
 }
 ```
 ## 4. Block 大小選擇
-在 GPU 硬體設計上，一個 Block 通常只有 1024 個 threads，所以最多只能有 <<<1, 1024>>>。實務上 Block 大小可以選擇接近 warp 大小的數字，不宜太多或是太少，在計算上會較有效率
+在 GPU 硬體設計上，一個 Block 通常只有 1024 個 threads，所以最多只能有 <<<1, 1024>>>。實務上 Block 大小可以選擇接近 warp 大小的數字及其整數倍，不宜太多或是太少，在計算上會較有效率
