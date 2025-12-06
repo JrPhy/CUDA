@@ -69,8 +69,17 @@ int main(void) {
 ```
 其中 ```cudaMallocManaged``` 是分配記憶體的一種方式，分配一個統一記憶體 **Unified memory** 讓 CPU 與 GPU 都能存取，並且在 run-time 可以自動搬運記憶體，就不需要在寫程式時另外寫，但是速度也較慢，```<<<...>>>``` 標示符是指用多少個 GPU Core，。再來則是等待所有 GPU 跑完後把資料丟回 CPU 的 ```cudaDeviceSynchronize()```，最後就是去跑```cudaFree```來返還申請的記憶體。
 
-## 2. GPU 的分塊
-GPU 中有層級關係，起調用一次函數就是一個 grid，一個 grid 中有多個 block，一個 block 中有多個 Warp，Warp 中固定有 32 個 thread，thread 就是最小單位，其關係如下圖
+## 2. 核函數
+給 GPU 執行的函數稱為核函數(Kernal function)，且只能返回```void```，所以都要用傳指標的方式進函數中，而使用多少 GPU 線程則是寫在核函數中。有以下標示符來給 CPU 與 GPU 辨認
+```
+__global__: CPU 呼叫給 GPU 跑
+__divice__: GPU 呼叫給 GPU 跑
+__host__: CPU 呼叫給 CPU 跑
+```
+大部分情況是使用 __global__ 修飾核函數，但如果有核函數呼叫另一個核函數，則是用 __divice__ 修飾。
+
+## 3. GPU 的分塊
+GPU 中有層級關係，調用一次核函數就是一個 grid，一個 grid 中有多個 block，一個 block 中有多個 Warp，Warp 中固定有 32 個 thread，thread 就是最小單位，其關係如下圖
 ```
 Grid
  ├── Block 0
