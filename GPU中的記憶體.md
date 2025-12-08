@@ -1,4 +1,5 @@
-CPU 跟 GPU 內都有各自的記憶體 Registers 和 L1/L2 Caches，而 GPU 內部還有自己的 VRAM 跟 Shared Memory。VRAM 如同電腦中的 RAM 一樣，是 GPU 的外設記憶體，速度較慢，使用 cudaMalloc 的就是在 VRAM，cudaMemcpy 也是使用這部分的記憶體。而 Shared Memory 則是 block 內共享，適合平行運算，在 kernel 內用 __shared__ 宣告，可以加速運算。
+CPU 跟 GPU 內都有各自的記憶體 Registers 和 L1/L2 Caches，而 GPU 內部還有自己的 VRAM 跟 Shared Memory。VRAM 如同電腦中的 RAM 一樣，是 GPU 的外設記憶體，速度較慢，使用 cudaMalloc 的就是在 VRAM，cudaMemcpy 也是使用這部分的記憶體。而 Shared Memory 則是 block 內共享，適合平行運算，在 kernel 內用 ```__shared__``` 宣告，可以加速運算。
+![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/gpu-devotes-more-transistors-to-data-processing.png)
 ```
 +----------------------+
 |     Registers        |  <-- 每個 thread 專屬，速度最快
