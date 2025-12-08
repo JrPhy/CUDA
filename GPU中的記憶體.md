@@ -150,3 +150,4 @@ int main() {
 +-------------------+                 +-------------------+
                                           __shared__
 ```
+![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/memory-hierarchy.png)
