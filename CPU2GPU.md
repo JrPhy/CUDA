@@ -100,6 +100,7 @@ Grid
  └── Block M
       └── Warp ...
 ```
+![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/grid-of-thread-blocks.png)
 在分配時有可能 thread 數量超過陣列大小，所以還是會在函數中寫以下判斷來保證不超過 index。
 ```
 int tid = threadIdx.x + blockIdx.x * blockDim.x;
