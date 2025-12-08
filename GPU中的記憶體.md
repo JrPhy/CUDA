@@ -1,24 +1,24 @@
 CPU 跟 GPU 內都有各自的記憶體 Registers 和 L1/L2 Caches，而 GPU 內部還有自己的 VRAM 跟 Shared Memory。VRAM 如同電腦中的 RAM 一樣，是 GPU 的外設記憶體，速度較慢，使用 cudaMalloc 的就是在 VRAM，cudaMemcpy 也是使用這部分的記憶體。而 Shared Memory 則是 block 內共享，適合平行運算，在 kernel 內用 __shared__ 宣告，可以加速運算。
 ```
-                 +----------------------+
-                 |     Registers        |  <-- 每個 thread 專屬，速度最快
-                 +----------------------+
-                           |
-                 +----------------------+
-                 |   Shared Memory      |  <-- Block 內 threads 共享，延遲低
-                 +----------------------+      kernel 內用 __shared__ 宣告
-                           |
-                 +----------------------+
-                 |   L1 / L2 Cache      |  <-- 快取，加速存取
-                 +----------------------+
-                           |
-                 +----------------------+
-                 |   Global Memory      |  <-- VRAM (GDDR/HBM)，容量大但延遲高
-                 +----------------------+      main 中用 cudaMalloc
-                           |
-                 +----------------------+
-                 | Constant / Texture   |  <-- 特殊用途，只讀或影像優化
-                 +----------------------+
++----------------------+
+|     Registers        |  <-- 每個 thread 專屬，速度最快
++----------------------+
+          |
++----------------------+
+|   Shared Memory      |  <-- Block 內 threads 共享，延遲低
++----------------------+      kernel 內用 __shared__ 宣告
+          |
++----------------------+
+|   L1 / L2 Cache      |  <-- 快取，加速存取
++----------------------+
+          |
++----------------------+
+|   Global Memory      |  <-- VRAM (GDDR/HBM)，容量大但延遲高
++----------------------+      main 中用 cudaMalloc
+          |
++----------------------+
+| Constant / Texture   |  <-- 特殊用途，只讀或影像優化
++----------------------+
 ```
 在前面提到的[矩陣乘法](https://github.com/JrPhy/CUDA/blob/main/%E5%90%8C%E6%AD%A5syncronize.md#2-__syncthreads)就有用到 Shared Memory，當然也可以不用，但速度就比較慢，因為要每次去存取 Global Memory 的值。所以選擇使用的記憶體也是影響效能因素之一，下方整理出使用時機
 # 程式設計時的使用場景
@@ -26,9 +26,9 @@ CPU 跟 GPU 內都有各自的記憶體 Registers 和 L1/L2 Caches，而 GPU 內
 | 記憶體種類       | 存取範圍          | 速度   | 常見用途                         | 從何而來  |
 |------------------|-------------------|--------|----------------------------------|-------|
 | **Registers**    | 單一 thread       | 最快   | thread 私有變數                  | Kernel 內部直接宣告變數 |
-| **Shared Memory**| 同一 block threads| 快     | thread 間資料交換、快取          | Kernel 內變數加上 __shared__ |
+| **Shared Memory**| 同一 block threads| 快     | thread 間資料交換、快取          | Kernel 內變數加上 ```__shared__``` |
 | **Global Memory**| 所有 threads      | 慢     | 大量輸入/輸出資料                | 外部傳入 kernel |
-| **Constant Memory** | 所有 threads   | 快（只讀） | 演算法常數、固定參數          | main 函數外變數加上 __constant__ |
+| **Constant Memory** | 所有 threads   | 快（只讀） | 演算法常數、固定參數          | main 函數外變數加上 ```__constant__``` |
 | **Texture Memory**  | 所有 threads   | 快（特殊存取） | 圖像處理、卷積操作          | cudaCreateTextureObject |
 | **Local Memory** | 單一 thread       | 慢（實際在 global） | register 溢出時使用     | 編譯器自動 |
 
@@ -122,4 +122,30 @@ int main() {
 
     return 0;
 }
+```
+在硬體上 CPU 與 GPU 間是利用 PCIe 來傳輸，速度會比 GPU 內部記憶體還慢，如果記憶體夠的話可以多將需要存取的數據放在 Registers 或是用 ```__shared__``` 修飾，可以用來加速運算。
+```
++-------------------+                 +-------------------+
+|       CPU         |                 |        GPU        |
+|  (Host Compute)   |                 | (Device Compute)  |
++---------+---------+                 +---------+---------+
+          |                                   |
+          |  Host API calls (CUDA runtime)    |
+          |  e.g., cudaMalloc, cudaMemcpy,    |
+          |        kernel launches            |
+          v                                   v
++-------------------+                   +-------------------+
+|   Host (CPU) RAM  | <==== PCIe =====> |  Device (GPU) VRAM |
+|  (Pageable/Pinned)|    (DMA xfer)     |   (Global Memory)  |
++-------------------+                   +-------------------+
+          ^                                   ^
+          |                                   |
+          +----H2D memcpy                     +---- D2H memcpy
+          |                                   |
+          v                                   v
++-------------------+                 +-------------------+
+|  Host Staging     |                 |  GPU Kernels      |
+|  Buffers (pinned) | -- launch -->   |  (Threads/Blocks) |
++-------------------+                 +-------------------+
+                                          __shared__
 ```
