@@ -1,3 +1,4 @@
+## 1. 記憶體架構
 CPU 跟 GPU 內都有各自的記憶體 Registers 和 L1/L2 Caches，而 GPU 內部還有自己的 VRAM 跟 Shared Memory。VRAM 如同電腦中的 RAM 一樣，是 GPU 的外設記憶體，速度較慢，使用 cudaMalloc 的就是在 VRAM，cudaMemcpy 也是使用這部分的記憶體。而 Shared Memory 則是 block 內共享，適合平行運算，在 kernel 內用 ```__shared__``` 宣告，可以加速運算。
 ![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/gpu-devotes-more-transistors-to-data-processing.png)
 ```
@@ -32,55 +33,55 @@ CPU 跟 GPU 內都有各自的記憶體 Registers 和 L1/L2 Caches，而 GPU 內
 | **Constant Memory** | 所有 threads   | 快（只讀） | 演算法常數、固定參數          | main 函數外變數加上 ```__constant__``` |
 | **Texture Memory**  | 所有 threads   | 快（特殊存取） | 圖像處理、卷積操作          | cudaCreateTextureObject |
 | **Local Memory** | 單一 thread       | 慢（實際在 global） | register 溢出時使用     | 編譯器自動 |
-
+## 2. 利用 Shared Memory 加速運算
 以前面的矩陣乘法例子來說
 ```c++
 #include <stdio.h>
 #include <cuda_runtime.h>
 
 // CUDA 核函數：矩陣乘法
-__global__ void matrixMulShared(float *C, float *A, float *B, int N) {
+__global__ void matrixMulShared(float *C, float *A, float *B, int n) {
     // Shared Memory：暫存 A、B 的區塊 (tile)
-    __shared__ float As[BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ float Bs[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float As[block_size][block_size];
+    __shared__ float Bs[block_size][block_size];
 
     // 計算 thread 在矩陣中的位置
-    int row = blockIdx.y * BLOCK_SIZE + threadIdx.y;
-    int col = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+    int row = blockIdx.y * block_size + threadIdx.y;
+    int col = blockIdx.x * block_size + threadIdx.x;
 
     float value = 0;
 
     // 分段載入 A、B 的 tile
-    for (int k = 0; k < (N + BLOCK_SIZE - 1) / BLOCK_SIZE; ++k) {
+    for (int k = 0; k < (n + block_size - 1) / block_size; ++k) {
         // 載入 A 的 tile
-        if (row < N && k * BLOCK_SIZE + threadIdx.x < N)
-            As[threadIdx.y][threadIdx.x] = A[row * N + k * BLOCK_SIZE + threadIdx.x];
+        if (row < n && k * block_size + threadIdx.x < n)
+            As[threadIdx.y][threadIdx.x] = A[row * n + k * block_size + threadIdx.x];
         else
             As[threadIdx.y][threadIdx.x] = 0;
 
         // 載入 B 的 tile
-        if (col < N && k * BLOCK_SIZE + threadIdx.y < N)
-            Bs[threadIdx.y][threadIdx.x] = B[(k * BLOCK_SIZE + threadIdx.y) * N + col];
+        if (col < n && k * block_size + threadIdx.y < n)
+            Bs[threadIdx.y][threadIdx.x] = B[(k * block_size + threadIdx.y) * n + col];
         else
             Bs[threadIdx.y][threadIdx.x] = 0;
 
         __syncthreads(); // 確保 tile 載入完成
 
         // 計算部分乘積
-        for (int n = 0; n < BLOCK_SIZE; ++n)
+        for (int n = 0; n < block_size; ++n)
             value += As[threadIdx.y][n] * Bs[n][threadIdx.x];
 
         __syncthreads(); // 確保所有 threads 完成計算
     }
 
     // 寫入結果到 Global Memory
-    if (row < N && col < N)
-        C[row * N + col] = value;
+    if (row < n && col < n)
+        C[row * n + col] = value;
 }
 
 int main() {
-    int N = 64, BLOCK_SIZE = 16;
-    int size = N * N * sizeof(float);
+    int n = 64, block_size = 16;
+    int size = n * n * sizeof(float);
 
     float *h_A, *h_B, *h_C;
     float *d_A, *d_B, *d_C;
@@ -90,7 +91,7 @@ int main() {
     h_B = (float*)malloc(size);
     h_C = (float*)malloc(size);
 
-    for (int i = 0; i < N * N; i++) {
+    for (int i = 0; i < n * n; i++) {
         h_A[i] = 1.0f;
         h_B[i] = 1.0f;
     }
@@ -102,10 +103,10 @@ int main() {
     cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
 
-    dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-    dim3 dimGrid((N + BLOCK_SIZE - 1) / BLOCK_SIZE, (N + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    dim3 dimBlock(block_size, block_size);
+    dim3 dimGrid((n + block_size - 1) / block_size, (n + block_size - 1) / block_size);
 
-    matrixMulShared<<<dimGrid, dimBlock>>>(d_C, d_A, d_B, N);
+    matrixMulShared<<<dimGrid, dimBlock>>>(d_C, d_A, d_B, n);
 
     cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);
 
@@ -126,28 +127,93 @@ int main() {
 ```
 在硬體上 CPU 與 GPU 間是利用 PCIe 來傳輸，速度會比 GPU 內部記憶體還慢，如果記憶體夠的話可以多將需要存取的數據放在 Registers 或是用 ```__shared__``` 修飾，可以用來加速運算。
 ```
-+-------------------+                 +-------------------+
-|       CPU         |                 |        GPU        |
-|  (Host Compute)   |                 | (Device Compute)  |
-+---------+---------+                 +---------+---------+
-          |                                   |
-          |  Host API calls (CUDA runtime)    |
-          |  e.g., cudaMalloc, cudaMemcpy,    |
-          |        kernel launches            |
-          v                                   v
++-------------------+                   +-------------------+
+|       CPU         |                   |        GPU        |
+|  (Host Compute)   |                   | (Device Compute)  |
++---------+---------+                   +---------+---------+
+          |                                     |
+          |  Host API calls (CUDA runtime)      |
+          |  e.g., cudaMalloc, cudaMemcpy,      |
+          |        kernel launches              |
+          v                                     v
 +-------------------+                   +-------------------+
 |   Host (CPU) RAM  | <==== PCIe =====> |  Device (GPU) VRAM |
 |  (Pageable/Pinned)|    (DMA xfer)     |   (Global Memory)  |
 +-------------------+                   +-------------------+
-          ^                                   ^
-          |                                   |
-          +----H2D memcpy                     +---- D2H memcpy
-          |                                   |
-          v                                   v
-+-------------------+                 +-------------------+
-|  Host Staging     |                 |  GPU Kernels      |
-|  Buffers (pinned) | -- launch -->   |  (Threads/Blocks) |
-+-------------------+                 +-------------------+
-                                          __shared__
+          ^                                     ^
+          |                                     |
+          +----H2D memcpy                       +---- D2H memcpy
+          |                                     |
+          v                                     v
++-------------------+                   +-------------------+
+|  Host Staging     |                   |  GPU Kernels      |
+|  Buffers (pinned) | --- launch --->   |  (Threads/Blocks) |
++-------------------+                   +-------------------+
+                                            __shared__
 ```
 ![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/memory-hierarchy.png)
+
+有時會遇到不確定要多少 Shared Memory，或是想寫成變數而非 #define 時，可以前方加上 extern，例如
+```c++
+__shared__ float sdata[256];
+extern __shared__ float sdata[];
+```
+第二種就是在 runtime 時決定大小，並在呼叫 kernel 時多傳一個參數進去，但無法寫成多維度的形式，只能用多維轉一維的表達式去改寫
+```
+__global__ void matrixMulShared(float *C, float *A, float *B, int n, int block_size) {
+    // 動態共享記憶體：一次分配 A、B 的 tile
+    extern __shared__ float shared[];
+    float* As = shared;                                   // 前半段存 A 的 tile
+    float* Bs = shared + block_size * block_size;         // 後半段存 B 的 tile
+
+    // 計算 thread 在矩陣中的位置
+    int row = blockIdx.y * block_size + threadIdx.y;
+    int col = blockIdx.x * block_size + threadIdx.x;
+
+    float value = 0;
+
+    // 分段載入 A、B 的 tile
+    for (int k = 0; k < (n + block_size - 1) / block_size; ++k) {
+        // 載入 A 的 tile
+        if (row < n && k * block_size + threadIdx.x < n)
+            As[threadIdx.y * block_size + threadIdx.x] = A[row * n + k * block_size + threadIdx.x];
+        else
+            As[threadIdx.y * block_size + threadIdx.x] = 0;
+
+        // 載入 B 的 tile
+        if (col < n && k * block_size + threadIdx.y < n)
+            Bs[threadIdx.y * block_size + threadIdx.x] = B[(k * block_size + threadIdx.y) * n + col];
+        else
+            Bs[threadIdx.y * block_size + threadIdx.x] = 0;
+
+        __syncthreads(); // 確保 tile 載入完成
+
+        // 計算部分乘積
+        for (int n = 0; n < block_size; ++n) {
+            value += As[threadIdx.y * block_size + n] * Bs[n * block_size + threadIdx.x];
+        }
+
+        __syncthreads(); // 確保所有 threads 完成計算
+    }
+
+    // 寫入結果到 Global Memory
+    if (row < n && col < n)
+        C[row * n + col] = value;
+}
+
+int main() {
+    ...
+    const int block_size = 32;
+    dim3 block(block_size, block_size);
+    dim3 grid((n + block_size - 1) / block_size, (n + block_size - 1) / block_size);
+          
+    // 需要分配兩個 tile (A、B)，所以大小是 2 * block_size * block_size
+    size_t sharedMemSize = 2 * block_size * block_size * sizeof(float);
+    // sharedMemSize 就是多傳進去的
+    matrixMulShared<<<grid, block, sharedMemSize>>>(C, A, B, n);
+    ...
+}
+```
+當然共享記憶體也是有上限的，如果超過硬體上限則會有 run-time error，若是要存取同個 Bank，則會有 Bank Conflict。
+## 4. Bank Conflict 
+Shared Memory 雖然可以加速計算，但是其大小最大目前(2025)不超過 1024 KB，如果使用太多就有可能會讓多個 Block 去存取同一塊 Shared Memory。
