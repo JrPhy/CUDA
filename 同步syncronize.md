@@ -94,7 +94,7 @@ __global__ void matrixMulTiled(float *A, float *B, float *C, int N, int TILE_SIZ
 | atomicXor    | 位元 XOR 操作          |
 
 而所有 CUDA 原子操作都回傳舊值，而不是新值，這樣設計是為了讓程式能判斷操作前的狀態，其中的```*address```是新值的位置，```val```則是舊值。
-```
+```C++
 #include <stdio.h>
 
 __global__ void xorKernel(int *data) {
