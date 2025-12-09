@@ -78,26 +78,22 @@ __host__: CPU 呼叫給 CPU 跑
 大部分情況是使用 __global__ 修飾核函數，但如果有核函數呼叫另一個核函數，則是用 __device__ 修飾。
 
 ## 3. GPU 的分塊
-GPU 中有層級關係，調用一次核函數就是一個 grid，一個 grid 中有多個 block，一個 block 中有多個 Warp，一個 Wrap 是 GPU 的調度單位，Warp 中固定有 16/32 個 thread，thread 就是最小單位，其關係如下圖
+GPU 中有層級關係，調用一次核函數就是一個 grid，一個 grid 中有多個 block，thread 就是最小單位。以```<<<2, 64>>>```為例關係如下圖
 ```
 Grid
  ├── Block 0
- │    ├── Warp 0
- │    │    ├── Thread 0
- │    │    ├── Thread 1
- │    │    ├── ...
- │    │    └── Thread 31
- │    ├── Warp 1
- │    │    ├── Thread 32
- │    │    ├── Thread 33
- │    │    └── ...
- │    └── Warp N
- │         └── Thread ...
- ├── Block 1
- │    ├── Warp 0
- │    └── Warp 1
- └── Block M
-      └── Warp ...
+ │    ├── Thread 0
+ │    ├── Thread 1
+ │    ├── Thread 2
+ │    ├── ...
+ │    └── Thread 63
+ │
+ └── Block 1
+      ├── Thread 0
+      ├── Thread 1
+      ├── Thread 2
+      ├── ...
+      └── Thread 63
 ```
 ![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/grid-of-thread-blocks.png)
 在分配時有可能 thread 數量超過陣列大小，所以還是會在函數中寫以下判斷來保證不超過 index。
