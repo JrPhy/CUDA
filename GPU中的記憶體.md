@@ -1,3 +1,4 @@
+文中圖片來自於 https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html
 ## 1. 記憶體架構
 CPU 跟 GPU 內都有各自的記憶體 Registers 和 L1/L2 Caches，而 GPU 內部還有自己的 VRAM 跟 Shared Memory。VRAM 如同電腦中的 RAM 一樣，是 GPU 的外設記憶體，速度較慢，使用 cudaMalloc 的就是在 VRAM，cudaMemcpy 也是使用這部分的記憶體。而 Shared Memory 則是 block 內共享，適合平行運算，在 kernel 內用 ```__shared__``` 宣告，可以加速運算。
 ![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/gpu-devotes-more-transistors-to-data-processing.png)
@@ -159,7 +160,7 @@ __shared__ float sdata[256];
 extern __shared__ float sdata[];
 ```
 第二種就是在 runtime 時決定大小，並在呼叫 kernel 時多傳一個參數進去，但無法寫成多維度的形式，只能用多維轉一維的表達式去改寫
-```
+```C++
 __global__ void matrixMulShared(float *C, float *A, float *B, int n, int block_size) {
     // 動態共享記憶體：一次分配 A、B 的 tile
     extern __shared__ float shared[];
@@ -215,5 +216,50 @@ int main() {
 }
 ```
 當然共享記憶體也是有上限的，如果超過硬體上限則會有 run-time error，若是要存取同個 Bank，則會有 Bank Conflict。
+
 ## 4. Bank Conflict 
-Shared Memory 雖然可以加速計算，但是其大小最大目前(2025)不超過 1024 KB，如果使用太多就有可能會讓多個 Block 去存取同一塊 Shared Memory。
+Shared Memory 雖然可以加速計算，但是其大小最大目前(2025)不超過 1024 KB，如果使用太多就有可能會讓多個 Block 去存取同一塊 Shared Memory。而共享記憶體被劃分成多個「bank」，每個 bank 可以同時處理一個 thread 的存取，目前 NVIDIA GPU 架構幾乎都是 32 個 bank，每個 bank 的寬度是 8 bytes。如果不同 threads 用到同一塊共享記憶體的不同位置時，那就須遵守先來後到的順序，就會變成***串行***而非並行，所以就要盡量避免使用到同一塊 bank，如下圖所示，只要沒有指向同一塊 bank 就不會有 Conflict。
+![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/examples-of-irregular-shared-memory-accesses.png)\
+如果都用 1D array 就幾乎不會遇到，但實務上很常用到 nD array，例如多張圖片，或是矩陣相乘等。而 padding 是一種很好的解法，以二維 32x32 矩陣相乘的例子
+```C++
+__global__ void sharedABMultiply(float *a, float* b, float *c,
+                                 int N) // N = 32
+{
+    __shared__ float aTile[TILE_DIM][TILE_DIM],
+                     bTile[TILE_DIM][TILE_DIM];
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    float sum = 0.0f;
+    aTile[threadIdx.y][threadIdx.x] = a[row*TILE_DIM+threadIdx.x];
+    bTile[threadIdx.y][threadIdx.x] = b[threadIdx.y*N+col];
+    __syncthreads();
+    for (int i = 0; i < TILE_DIM; i++) {
+        sum += aTile[threadIdx.y][i]* bTile[i][threadIdx.x];
+    }
+    c[row*N+col] = sum;
+}
+```
+```
+Thread 0 → data[0][0] → Bank 0
+Thread 1 → data[0][1] → Bank 1
+...
+Thread 31 → data[0][31] → Bank 31
+Thread 32 → data[1][0] → Bank 0 X Conflict
+Thread 33 → data[1][1] → Bank 1 X Conflict
+```
+可以看到這樣就把 data[i][0], data[i][1], ..., data[i][31] 都打到同個 Bank 上，所以就會有等待的時間。所以在宣告 ```__shared__``` 時可以在每個 col+1，這樣就可以打亂
+```c++
+__shared__ float aTile[TILE_DIM][TILE_DIM+1],
+                 bTile[TILE_DIM][TILE_DIM+1];
+...
+/*
+Thread 0 → data[0][0] → Bank 0
+Thread 1 → data[0][1] → Bank 1
+...
+Thread 31 → data[0][31] → Bank 31
+Thread 32 → data[1][0] → Bank 1
+Thread 33 → data[1][1] → Bank 2
+*/
+```
+即便用一維陣列也是有相同問題，因為編譯後其實都是一維陣列，所以也可以用相同方法去避免。最理想的情況，shared 無 conflict 比 global 快 400–600 倍；即使有 conflict，仍比 global 快一個數量級。
+
