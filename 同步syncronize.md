@@ -77,3 +77,43 @@ __global__ void matrixMulTiled(float *A, float *B, float *C, int N, int TILE_SIZ
     if (row < N && col < N) C[row*N + col] = sum;
 }
 ```
+## 3. 原子操作
+在多線程的程式中除了強制同步外，在簡單的計算中也可使用[原子操作](https://github.com/JrPhy/Multiple_Thread/blob/main/%E4%B8%8A%E4%B8%8B%E6%96%87%E4%BA%A4%E6%8F%9B%E8%88%87%E5%8E%9F%E5%AD%90%E6%93%8D%E4%BD%9C.md)，cuda 則是提供了對應的函數
+| 函數名稱     | 功能說明               |
+|--------------|------------------------|
+| atomicAdd    | 對變數進行加法操作     |
+| atomicSub    | 對變數進行減法操作     |
+| atomicExch   | 將變數交換為新值       |
+| atomicMin    | 設定變數為最小值       |
+| atomicMax    | 設定變數為最大值       |
+| atomicInc    | 對變數進行遞增操作     |
+| atomicDec    | 對變數進行遞減操作     |
+| atomicCAS    | 比較並交換 (Compare-And-Swap) |
+| atomicAnd    | 位元 AND 操作          |
+| atomicOr     | 位元 OR 操作           |
+| atomicXor    | 位元 XOR 操作          |
+
+而所有 CUDA 原子操作都回傳舊值，而不是新值，這樣設計是為了讓程式能判斷操作前的狀態，其中的```*address```是新值的位置，```val```則是舊值。
+```
+#include <stdio.h>
+
+__global__ void xorKernel(int *data) {
+    int tid = threadIdx.x;
+    atomicXor(data, 1 << tid);  // 把不同位元位置設為 1
+}
+
+int main() {
+    int h_data = 0, *d_data;
+
+    cudaMalloc((void**)&d_data, sizeof(int));
+    cudaMemcpy(d_data, &h_data, sizeof(int), cudaMemcpyHostToDevice);
+
+    xorKernel<<<1, 4>>>(d_data);
+
+    cudaMemcpy(&h_data, d_data, sizeof(int), cudaMemcpyDeviceToHost);
+    cudaFree(d_data);
+
+    printf("結果: %d (二進位: %08b)\n", h_data, h_data);
+    return 0;
+}
+```
