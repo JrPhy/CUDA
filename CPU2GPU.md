@@ -1,4 +1,3 @@
-
 ## 1. 從 CPU 到 GPU
 在此比較只用 CPU 與 使用 GPU 的寫法
 ```C++
@@ -205,3 +204,25 @@ int main() {
 ```
 ## 4. Block 大小選擇
 在 GPU 硬體設計上，一個 Block 通常只有 1024 個 threads，所以最多只能有 <<<1, 1024>>>。實務上 Block 大小可以選擇接近 warp 大小的數字及其整數倍，不宜太多或是太少，在計算上會較有效率
+
+## 5. 程式碼樣板
+CPU 呼叫 GPU 函數時，該函數前方要用```__global__```修飾，函數內部要注意 index 小於陣列大小。main 函數呼叫 KernelFunction 時
+```C++
+// Kernel definition
+__global__ void KernelFunc(float A[N][N], float B[N][N],
+float C[N][N]) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if (i < N && j < N) //
+        C[i][j] = A[i][j] + B[i][j];
+}
+
+int main() {
+    ...
+    // Kernel invocation
+    dim3 threadsPerBlock(16, 16);
+    dim3 numBlocks(N / threadsPerBlock.x, N / threadsPerBlock.y);
+    MatAdd<<<numBlocks, threadsPerBlock>>>(A, B, C);
+    ...
+}
+```
