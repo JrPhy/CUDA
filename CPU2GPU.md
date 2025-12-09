@@ -78,7 +78,7 @@ __host__: CPU 呼叫給 CPU 跑
 大部分情況是使用 __global__ 修飾核函數，但如果有核函數呼叫另一個核函數，則是用 __device__ 修飾。
 
 ## 3. GPU 的分塊
-GPU 中有層級關係，調用一次核函數就是一個 grid，一個 grid 中有多個 block，一個 block 中有多個 Warp，Warp 中固定有 32 個 thread，thread 就是最小單位，其關係如下圖
+GPU 中有層級關係，調用一次核函數就是一個 grid，一個 grid 中有多個 block，一個 block 中有多個 Warp，一個 Wrap 是 GPU 的調度單位，Warp 中固定有 16/32 個 thread，thread 就是最小單位，其關係如下圖
 ```
 Grid
  ├── Block 0
@@ -143,7 +143,7 @@ int main() {
     batchGrayScaleKernel<<<gridDim, blockDim>>>(d_input, d_output, width, height);
 }
 ```
-## 3. 手動分配給 GPU 
+## 4. 手動分配給 GPU 
 另一個則是 ```cudaMalloc``` 要搭配 ```cudaMemcpy``` ，手動將資料在 CPU 與 GPU 間搬運，效能也較好，一般也都是使用這兩個。計算前先將 CPU 的記憶體複製到 GPU，計算完後再丟回來即可，這部分已有現成函數可使用。
 ```c++
 #include <cuda_runtime.h>
@@ -202,7 +202,7 @@ int main() {
     return 0;
 }
 ```
-## 4. Block 大小選擇
+## 5. Block 大小選擇
 在 GPU 硬體設計上，一個 Block 通常只有 1024 個 threads，所以最多只能有 <<<1, 1024>>>。實務上 Block 大小可以選擇接近 warp 大小的數字及其整數倍，不宜太多或是太少，在計算上會較有效率
 
 ## 5. 程式碼樣板
