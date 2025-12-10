@@ -220,7 +220,7 @@ int main() {
 ## 4. Bank Conflict 
 Shared Memory 雖然可以加速計算，但是其大小最大目前(2025)不超過 1024 KB，如果使用太多就有可能會讓多個 Block 去存取同一塊 Shared Memory。而共享記憶體被劃分成多個「bank」，每個 bank 可以同時處理一個 thread 的存取，目前 NVIDIA GPU 架構幾乎都是 32 個 bank，每個 bank 的寬度是 8 bytes。如果不同 threads 用到同一塊共享記憶體的不同位置時，那就須遵守先來後到的順序，就會變成***串行***而非並行，所以就要盡量避免使用到同一塊 bank，如下圖所示，只要沒有指向同一塊 bank 就不會有 Conflict。
 ![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/examples-of-irregular-shared-memory-accesses.png)\
-如果都用 1D array 就幾乎不會遇到，但實務上很常用到 nD array，例如多張圖片，或是矩陣相乘等。而 padding 是一種很好的解法，以二維 32x32 矩陣相乘的例子
+實務上很常用到 nD array，例如多張圖片，或是矩陣相乘等。而 padding 是一種很好的解法，以二維 32x32 矩陣相乘的例子
 ```C++
 __global__ void sharedABMultiply(float *a, float* b, float *c,
                                  int N) // N = 32
