@@ -145,7 +145,7 @@ int main() {
     dim3 blockSize(tile_size, tile_size);
     dim3 gridSize((n + tile_size - 1) / tile_size, (m + tile_size - 1) / tile_size);
 
-    multiply<<<numBlocks, blockSize>>>(m, n, l, x, y, z, TILE_SIZE);
+    multiply<<<numBlocks, blockSize>>>(m, n, l, x, y, z, tile_size);
     return 0;
 }
 ```
