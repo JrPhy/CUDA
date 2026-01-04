@@ -216,9 +216,14 @@ float C[N][N]) {
 int main() {
     ...
     // Kernel invocation
+    cudaMalloc(/*...*/);
+    cudaMemcpy(/*...*/, cudaMemcpyHostToDevice);
+
     dim3 threadsPerBlock(16, 16);
     dim3 numBlocks(N / threadsPerBlock.x, N / threadsPerBlock.y);
     MatAdd<<<numBlocks, threadsPerBlock>>>(A, B, C);
+    cudaMemcpy(/*...*/, cudaMemcpyDeviceToHost);
+    cudaFree(/*...*/)
     ...
 }
 ```
