@@ -19,7 +19,7 @@ int main() {
     }
 
     add(n, x, y)
-    for (int i = 0; i < c; i++) std::cout << y[i] << " ";
+    for (int i = 0; i < n; i++) std::cout << y[i] << " ";
     return 0;
 }
 
@@ -98,10 +98,10 @@ Grid
 ![img](https://docs.nvidia.com/cuda/cuda-c-programming-guide/_images/grid-of-thread-blocks.png)
 在分配時有可能 thread 數量超過陣列大小，所以還是會在函數中寫以下判斷來保證不超過 index。
 ```
-int tid = threadIdx.x + blockIdx.x * blockDim.x;
+int tid = blockIdx.x * blockDim.x + threadIdx.x;
 if (tid < n) y[tid] = x[tid] + y[tid];
 ```
-<<<numBlocks, blockSize>>> 這就是用來告訴 GPU 要使用多少個。以一維為例，就是 1* n 或是 n*1 的陣列，所以此例子中有 1 個 block，裡面有 256 個線程去跑。當然也可以用多維的方式去分配，dim3 就是分別對應 x, y, z，若沒寫則預設為 1。
+<<<numBlocks, blockSize>>> 這就是用來告訴 GPU 要使用多少個。以一維為例，就是 1* n 或是 n*1 的陣列，所以此例子中有 1 個 block，裡面有 256 個線程去跑。當然也可以用多維的方式去分配，dim3 就是分別對應 x, y, z，若沒寫則預設為 1。可以看到程式中並沒有 ```threadIdx.x + blockIdx.x * blockDim.x``` 相關變數，這三個是 CUDA 在 kernel 裡提供的內建變數，用來計算全局索引來達到平行計算，如果是多維就會有多個，當然計算條件也會有多個。
 ```
 dim3 blockSize(16, 16);  // 每個 block 有 16×16 threads
 dim3 numBlocks((width+15)/16, (height+15)/16);
@@ -209,8 +209,7 @@ __global__ void KernelFunc(float A[N][N], float B[N][N],
 float C[N][N]) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-    if (i < N && j < N) //
-        C[i][j] = A[i][j] + B[i][j];
+    if (i < N && j < N) C[i][j] = A[i][j] + B[i][j];
 }
 
 int main() {
